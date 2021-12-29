@@ -1,32 +1,11 @@
 import xarray as xr
 import numpy as np
+import multiprocessing as mp
+import os
+import math
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
-start = ('1920', '1950', '1980')
-seasons = ("Full_Season", 'MJA', 'JJA', 'JAS', 'ASO', 'SON')
-
-for i in start:
-    for s in seasons:
-        aux = xr.open_dataset(dir + 'Composite_' + i + '_2020_' + s + '.nc')
-        neutro = aux.Neutral
-
-        sim_pos = aux.DMI_sim_pos
-        sim_neg = aux.DMI_sim_neg
-
-        dmi_un_pos = aux.DMI_un_pos
-        dmi_un_neg = aux.DMI_un_neg
-        dmi_pos = aux.DMI_pos
-        dmi_neg = aux.DMI_neg
-
-        n34_un_pos = aux.N34_un_pos
-        n34_un_neg = aux.N34_un_neg
-        n34_pos = aux.N34_pos
-        n34_neg = aux.N34_neg
-
-        neutro_sim_pos = np.concatenate([neutro.values, sim_pos])
-
-        del aux
-
+# Functions ############################################################################################################
 
 def CompositeSimple(original_data, index, mmin, mmax):
     def is_months(month, mmin, mmax):
@@ -46,58 +25,140 @@ def CompositeSimple(original_data, index, mmin, mmax):
         print(' len index = 0')
 
 
-data_to_concat = aux.N34_un_pos.values
 
-import math
 
-def PermuDatesComposite(data, data_to_concat, neutro, M=10, seed=42, mmin=-99, mmax=-99, name='Comp'):
+
+
+########################################################################################################################
+
+nc_date_dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
+data_dir = '/datos/luciano.andrian/ncfiles/'
+
+start = ('1920', '1950', '1980')
+seasons = ("Full_Season", 'MJJ', 'JJA', 'JAS', 'ASO', 'SON')
+
+min_max_months = [[7,11],[5,7],[6,8],[7,9],[8,10],[9,11]]
+
+variable = 'hgt200'
+i = '1950'
+s = seasons[0]
+
+
+def NumberPerts(data_to_concat, neutro):
     total = len(data_to_concat) + len(neutro)
     len1 = len(neutro)
     len2 = len(data_to_concat)
 
-    total_perts = math.factorial(total)/(math.factorial(len2)*math.factorial(len1))
+    total_perts = math.factorial(total) / (math.factorial(len2) * math.factorial(len1))
+
+    if total_perts >= 10000:
+        tot = 10000
+        print('M = 10000')
+    else:
+        tot = total_perts
+        print('M = ' + str(total_perts))
+
+    M = []
+    n = 0
+    jump = 9
+    while n < tot:
+        aux = list(np.linspace((0 + n), (n + jump), (jump + 1)))
+        M.append(aux)
+        n = n + jump + 1
+
+    return M
+
+def PermuDatesComposite(n, data=data, mmonth=mmonth, season_name=s):
+    mmin = mmonth[0]
+    mmax = mmonth[-1]
+    rn = np.random.RandomState(616)
+    for a in n:
+        dates_rn = rn.permutation(neutro_concat)
+        neutro_new = dates_rn[0:len(neutro)]
+        data_new = dates_rn[len(neutro):]
+
+        neutro_comp = CompositeSimple(original_data=data, index=neutro_new,
+                                      mmin=mmin, mmax=mmax)
+        data_comp = CompositeSimple(original_data=data, index=data_new,
+                                    mmin=mmin, mmax=mmax)
+
+        comp = data_comp - neutro_comp
+        comp.to_netcdf('/datos/luciano.andrian/ncfiles/nc_comps/' + 'Comps_' +
+                       str(int(a)) + '_' + season_name + '.nc')
+
+
+def ParallelProc(M, excluded_processors=15):
+    pool = mp.Pool(mp.cpu_count() - excluded_processors)
+    pool.map_async(PermuDatesComposite, [n for n in M])
+    pool.close()
+
+
+for i in start:
+    print(i)
+    data = xr.open_dataset(data_dir + variable + '.nc')
+    print('Open ' + variable + '.nc')
+
+    #------------------------------------------------------------------------------------------------------------------#
+    if len(data.sel(lat=slice(-90, 20)).lat.values) == 0:
+        data = data.sel(time=slice(i + '-01-01', '2020-12-01'), lat=slice(20, -90))
+    else:
+        data = data.sel(time=slice(i + '-01-01', '2020-12-01'), lat=slice(-90, 20))
+    #------------------------------------------------------------------------------------------------------------------#
+    count = 0
+    for s in seasons:
+
+        mmonth = min_max_months[count]
+
+        aux = xr.open_dataset(nc_date_dir + 'Composite_' + i + '_2020_' + s + '.nc')
+        neutro = aux.Neutral
+        data_to_concat = aux.DMI_sim_pos
+        del aux
+
+        M = NumberPerts(data_to_concat, neutro)
+
+        if data_to_concat[0] != 0:
+            neutro_concat = np.concatenate([neutro, data_to_concat])
+
+            ParallelProc(M, 15)
+
+
+########################################################################################################################333333
+
+
+
+        # sim_pos = aux.DMI_sim_pos
+        # sim_neg = aux.DMI_sim_neg
+        #
+        # dmi_un_pos = aux.DMI_un_pos
+        # dmi_un_neg = aux.DMI_un_neg
+        # dmi_pos = aux.DMI_pos
+        # dmi_neg = aux.DMI_neg
+        #
+        # n34_un_pos = aux.N34_un_pos
+        # n34_un_neg = aux.N34_un_neg
+        # n34_pos = aux.N34_pos
+        # n34_neg = aux.N34_neg
+        #
+        # neutro_sim_pos = np.concatenate([neutro.values, sim_pos])
+        #
+        # del aux
+
+
     #
-    # if total_perts > 10000:
-    #     M = 10000
-    #     print('M = 10000')
-    # else:
-    #     M = total_perts
-    #     print('M = ' + str(total_perts))
 
 
-    print('Seed ' + str(seed))
 
-    if data_to_concat[0] != 0:
-        neutro_concat = np.concatenate([neutro, data_to_concat])
 
-        rn = np.random.RandomState(seed)
-        for i in range(M):
-            dates_rn = rn.permutation(neutro_concat)
-            neutro_new = dates_rn[0:len(neutro)]
-            data_new = dates_rn[len(neutro):]
-
-            neutro_comp = CompositeSimple(original_data=data, index=neutro_new,
-                                          mmin=mmin, mmax=mmax)
-            data_comp = CompositeSimple(original_data=data, index=data_new,
-                                        mmin=mmin, mmax=mmax)
-
-            comp = data_comp - neutro_comp
-            comp.to_netcdf('/datos/luciano.andrian/ncfiles/nc_comps/' + name + str(i) + '_' + season + '.nc')
-
-import multiprocessing as mp
-pool = mp.Pool(mp.cpu_count() - 10)
-[pool.apply_async(PermuDatesComposite, args=(data, data_to_concat, neutro, m, 42, 9, 11)) for m in [100]]
-pool.close()
 
 
 
 ###########################################
 
-os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+
 
 w_dir = '/home/luciano.andrian/doc/salidas/'
 out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/composite/'
-pwd = '/datos/luciano.andrian/ncfiles/'
+
 
 import multiprocessing as mp
 
@@ -145,9 +206,6 @@ season = 9
 bwa = False
 SA_map = True
 
-data = xr.open_dataset(pwd + variables + '.nc')
-print('data open:' + variables + '.nc')
-data = data.sel(time=slice(i + '-01-01', '2020-12-01'), lat=slice(20, -90))
 
 
 

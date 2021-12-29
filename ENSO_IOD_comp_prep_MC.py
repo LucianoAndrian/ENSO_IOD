@@ -24,7 +24,7 @@ pwd = '/datos/luciano.andrian/ncfiles/'
 ########################################################################################################################
 
 seasons = [6, 7, 8, 9, 10]
-seasons_name = ['MJA', 'JJA', 'JAS','ASO', 'SON']
+seasons_name = ['MJJ', 'JJA', 'JAS','ASO', 'SON']
 
 full_season2 = [True, False]
 bwa = False
