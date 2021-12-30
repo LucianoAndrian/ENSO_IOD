@@ -24,11 +24,6 @@ def CompositeSimple(original_data, index, mmin, mmax):
     else:
         print(' len index = 0')
 
-
-
-
-
-
 ########################################################################################################################
 
 nc_date_dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
@@ -75,7 +70,6 @@ def NumberPerts(data_to_concat, neutro, num = 0):
     return M
 
 
-
 def ParallelProc(M, excluded_processors=15):
     pool = mp.Pool(mp.cpu_count() - excluded_processors)
     pool.map_async(PermuDatesComposite, [n for n in M])
@@ -119,7 +113,7 @@ for c in cases:
                     comp = data_comp - neutro_comp
                     comp = comp.expand_dims(time=[a])
                     comp.to_netcdf('/datos/luciano.andrian/ncfiles/nc_comps/' + 'Comps_' +
-                                   str(int(a)) + '_' + season_name + '.nc')
+                                   str(int(a)) + '.nc')
                     del comp
 
 
@@ -128,23 +122,36 @@ for c in cases:
             data_to_concat = aux[c]
             del aux
 
-            M = NumberPerts(data_to_concat, neutro, 100)
+            M = NumberPerts(data_to_concat, neutro, 0)
 
             if data_to_concat[0] != 0:
                 neutro_concat = np.concatenate([neutro, data_to_concat])
                 from multiprocessing.pool import ThreadPool
-                pool = ThreadPool(25)
+                pool = ThreadPool(30)
                 pool.map(PermuDatesComposite, [n for n in M])
                 pool.close()
 
             aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/*.nc', parallel=True
-                                    , chunks=10,
+                                    , chunks=100,
                                     combine='nested', concat_dim="time", coords="different",
                                     compat="broadcast_equals")
 
-            qt = aux.load().quantile([.05, .95], dim='time', interpolation='linear')
+            qt = aux.persist().quantile([.05, .95], dim='time', interpolation='linear')
 
             qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
                          variable + '_quantiles_'+ c + '_' + i + '-2020.nc')
 
 ########################################################################################################################
+import xarray as xr
+import dask
+from multiprocessing.pool import ThreadPool
+with dask.config.set(schedular='threads', pool=ThreadPool(10)):
+    aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/*.nc', parallel=True
+                            , chunks=10000,
+                            combine='nested', concat_dim="time", coords="different",
+                            compat="broadcast_equals")
+    qt = aux.load().quantile([.05, .95], dim='time', interpolation='linear')
+    qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
+                 variable + '_quantiles_' + c + '_' + i + '-2020.nc')
+
+
