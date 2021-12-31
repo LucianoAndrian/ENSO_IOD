@@ -83,6 +83,9 @@ for c in cases:
         print(i)
         data = xr.open_dataset(data_dir + variable + '.nc')
         print('Open ' + variable + '.nc')
+        if variable == 'hgt200':
+            print('drop level')
+            data = data.drop('level')
 
         # ------------------------------------------------------------------------------------------------------------------#
         if len(data.sel(lat=slice(-90, 20)).lat.values) == 0:
@@ -127,7 +130,7 @@ for c in cases:
             if data_to_concat[0] != 0:
                 neutro_concat = np.concatenate([neutro, data_to_concat])
                 from multiprocessing.pool import ThreadPool
-                pool = ThreadPool(30)
+                pool = ThreadPool(25)
                 pool.map(PermuDatesComposite, [n for n in M])
                 pool.close()
 
@@ -144,14 +147,38 @@ for c in cases:
 ########################################################################################################################
 import xarray as xr
 import dask
+import numpy as np
 from multiprocessing.pool import ThreadPool
 with dask.config.set(schedular='threads', pool=ThreadPool(10)):
-    aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/*.nc', parallel=True
-                            , chunks=10000,
+    aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/Comps_*.nc', parallel=True
+                            , chunks={'time':-1, 'lat':147,'lon':240},
                             combine='nested', concat_dim="time", coords="different",
                             compat="broadcast_equals")
-    qt = aux.load().quantile([.05, .95], dim='time', interpolation='linear')
-    qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
-                 variable + '_quantiles_' + c + '_' + i + '-2020.nc')
+    aux = aux['var'].astype(np.float32)
+    print('quantiles')
+    aux = np.quantile(aux['var'].persist(),[.05,.95], axis=0)
+    #qt = aux.load().quantile([.05, .95], dim='time', interpolation='linear')
+    # qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
+    #              variable + '_quantiles_' + c + '_' + i + '-2020.nc')
 
 
+dask.array.percentile
+
+
+
+def TauSig(x, y):
+    from scipy import stats
+    tau, pvalue = stats.kendalltau(x, y, nan_policy='propagate', method='asymptotic')
+    return pvalue
+
+def TauCorrSig(x, y, dim='time'):
+    return xr.apply_ufunc(
+        TauSig, x, y,
+        input_core_dims=[[dim], [dim]],
+        vectorize=True,  # !Important!
+        output_dtypes=[float])
+
+
+def Qt(x):
+    import pandas as pd
+    q =
