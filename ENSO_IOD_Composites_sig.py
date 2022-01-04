@@ -1,6 +1,9 @@
+import time
+
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
 import cartopy.feature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.crs as ccrs
@@ -12,7 +15,7 @@ warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
 ########################################################################################################################
 nc_date_dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
 data_dir = '/datos/luciano.andrian/ncfiles/'
-out_dir = 'home/luciano.andrian/doc/salidas/ENSO_IOD/composite/'
+out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/composite/w_sig/'
 sig_dir = '/datos/luciano.andrian/ncfiles/nc_quantiles/'
 
 start = ('1920', '1950')
@@ -35,22 +38,40 @@ scales = [np.linspace(-450, 450, 21),  #hgt
 
 SA = [False,False,False,False,False,True, True, True]
 step = [1,6,1,1,1,1,1,1]
-text = [True,True,True,True,True,True,False,False,False,False]
+text = True
 
-title_case = ['DMI-ENSO simultaneous positive phase - ',
-              'DMI-ENSO simultaneous negative phase - ',
-              'DMI negative phase - ',
-              'DMI positive phase - ',
-              'DMI isolated positive phase - ',
-              'DMI isolated negative phase - ',
-              'ENSO positive phase - ',
-              'ENSO negative phase - ',
-              'ENSO isolated positive phase - ',
-              'ENSO isolated negative phase - ']
+title_case = ['DMI-ENSO simultaneous positive phase ',
+              'DMI-ENSO simultaneous negative phase ',
+              'DMI negative phase ',
+              'DMI positive phase ',
+              'DMI isolated positive phase ',
+              'DMI isolated negative phase ',
+              'ENSO positive phase ',
+              'ENSO negative phase ',
+              'ENSO isolated positive phase ',
+              'ENSO isolated negative phase ']
 
 v_name = ['HGT 200hPa', 'Divergence', 'PSL',
           'Stream Function', 'Potential Velocity',
           'Temperature - Cru', 'Temperature - BEIC', 'Precipitation - GPCC']
+
+
+
+cbar_r = colors.ListedColormap(['#B9391B', '#CD4838', '#E25E55', '#F28C89', '#FFCECC',
+                                'white',
+                                '#B3DBFF', '#83B9EB', '#5E9AD7', '#3C7DC3', '#2064AF'])
+cbar_r.set_under('#9B1C00')
+cbar_r.set_over('#014A9B')
+cbar_r.set_bad(color='white')
+
+cbar = colors.ListedColormap(['#B9391B', '#CD4838', '#E25E55', '#F28C89', '#FFCECC',
+                              'white',
+                              '#B3DBFF', '#83B9EB', '#5E9AD7', '#3C7DC3', '#2064AF'][::-1])
+cbar.set_over('#9B1C00')
+cbar.set_under('#014A9B')
+cbar.set_bad(color='white')
+
+cmap = [cbar, cbar, cbar, cbar_r, cbar, cbar, cbar, 'BrBG']
 
 
 ## Functions ###########################################################################################################
@@ -147,7 +168,7 @@ def Plot(comp, comp_sig, significance=False,
     plt.tight_layout()
 
     if save:
-        plt.savefig(name_fig + '.jpg')
+        plt.savefig(out_dir + name_fig + '.jpg')
         plt.close()
     else:
         plt.show()
@@ -157,6 +178,7 @@ for v in variables:
     for i in start:
         print('Período: ' + i + '- 2020')
         print('Open ' + v + '.nc')
+
 
         data = xr.open_dataset(data_dir + v + '.nc')
 
@@ -170,9 +192,31 @@ for v in variables:
         c_cases=0
         for c in cases:
             print(c)
-            count = 0
 
+            count = 0
             for s in seasons:
+
+                # Significance #
+                for m in [1, 2, 3, 4, 5, 6, 8, 9, 10]:
+                    try:
+                        if m != 1:
+                            print('Waiting..')
+                            time.sleep(300) # 5min
+                        else:
+                            print('first try')
+                        data_sig = xr.open_dataset(sig_dir + v + '_' + c + '_' + i + '_2020' + '_' + s + '.nc')
+                        break
+                    except:
+                        try:
+                            s2 = seasons[count+1]
+                            data_sig = xr.open_dataset(sig_dir + v + '_' + c + '_' + i + '_2020' + '_' + s2 + '.nc')
+                            print(v + '_' + c + '_' + i + '_2020' + '_' + s + '.nc' + ' No se computo')
+                            s = s2
+                            print('pasando a ' + v + '_' + c + '_' + i + '_2020' + '_' + s + '.nc')
+                            break
+                        except:
+                            print(v + '_' + c + '_' + i + '_2020' + '_' + s + '.nc' + 'aún no disponible')
+
 
                 aux = xr.open_dataset(nc_date_dir + 'Composite_' + i + '_2020_' + s + '.nc')
                 neutro = aux.Neutral
@@ -188,23 +232,29 @@ for v in variables:
                                               mmin=mmin, mmax=mmax)
                 data_comp = CompositeSimple(original_data=data, index=case,
                                             mmin=mmin, mmax=mmax)
-
                 comp = data_comp - neutro_comp
 
 
-                # Significance #
-                data_sig = xr.open_dataset(sig_dir + v + '_' + c + '_' + i + '_2020' + '_' + s + '.nc')
-                sig = comp.where((comp < data_sig['var'][0]) | (comp>data_sig['var'][1]))
-                sig = sig.where(~np.isnan(sig['var']),0)
+                sig = comp.where((comp<data_sig['var'][0]) | (comp>data_sig['var'][1]))
+                try:
+                    sig = sig.where(~np.isnan(sig['var']), 0)
+                except:
+                    print('Sin valores significativos')
+
+
 
                 print(title_case[c_cases])
-                Plot(comp=comp, comp_sig=sig, significance=True,
+                Plot(comp=comp, comp_sig=sig, significance=True, cmap=cmap[c_var],
                      levels=np.linspace(-450, 450, 21), number_events=case,
-                     SA=SA[c_var], step=step[c_var], text=text[c_cases], dpi=200,
+                     SA=SA[c_var], step=step[c_var], text=text, dpi=200,
                      title=v_name[c_var] + '\n' + title_case[c_cases] + '\n' +s + '  ' + i +  ' - 2020',
-                     name_fig = 'Comp_' + c + '_' + s + '_' + i + '_2020')
+                     name_fig = 'Comp_' + c + '_' + s + '_' + i + '_2020',
+                     save=True)
+
+                count += 1
             c_cases += 1
     c_var += 1
+
 
 
 
