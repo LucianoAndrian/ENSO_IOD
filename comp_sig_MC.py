@@ -1,8 +1,11 @@
 import xarray as xr
 import numpy as np
-import multiprocessing as mp
+from multiprocessing.pool import ThreadPool
 import os
+import glob
 import math
+from datetime import datetime
+import dask
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 # Functions ############################################################################################################
@@ -23,7 +26,6 @@ def CompositeSimple(original_data, index, mmin, mmax):
         return comp_field
     else:
         print(' len index = 0')
-
 
 def NumberPerts(data_to_concat, neutro, num = 0):
     total = len(data_to_concat) + len(neutro)
@@ -62,109 +64,126 @@ def NumberPerts(data_to_concat, neutro, num = 0):
 nc_date_dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
 data_dir = '/datos/luciano.andrian/ncfiles/'
 
-start = ('1920', '1950', '1980')
-seasons = ("Full_Season", 'MJJ', 'JJA', 'JAS', 'ASO', 'SON')
+start = ('1920', '1950')
+seasons = ("Full_Season", 'JJA', 'ASO', 'SON')
 
-min_max_months = [[7,11],[5,7],[6,8],[7,9],[8,10],[9,11]]
+min_max_months = [[7,11], [6,8],[8,10],[9,11]]
 
-variable = 'hgt200'
-i = '1950'
-s = seasons[0]
+variables = ['hgt200', 'div', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
 
 cases = ['DMI_sim_pos', 'DMI_sim_neg', 'DMI_neg', 'DMI_pos', 'DMI_un_pos', 'DMI_un_neg',
          'N34_pos', 'N34_neg', 'N34_un_pos', 'N34_un_neg']
-c = cases[0]
-for c in cases:
+
+#----------------------------------------------------------------------------------------------------------------------#
+
+for v in variables:
+    print('Variable: ' + v)
+
     for i in start:
-        print(i)
-        data = xr.open_dataset(data_dir + variable + '.nc')
-        print('Open ' + variable + '.nc')
-        if variable == 'hgt200':
+        print('Período: ' + i + '- 2020')
+        print('Open ' + v + '.nc')
+
+        data = xr.open_dataset(data_dir + v + '1x1.nc')
+
+        if v == 'hgt200':
             print('drop level')
             data = data.drop('level')
-        # ------------------------------------------------------------------------------------------------------------------#
-        if len(data.sel(lat=slice(-90, 20)).lat.values) == 0:
-            data = data.sel(time=slice(i + '-01-01', '2020-12-01'), lat=slice(20, -90))
-        else:
-            data = data.sel(time=slice(i + '-01-01', '2020-12-01'), lat=slice(-90, 20))
-        # ------------------------------------------------------------------------------------------------------------------#
-        count = 0
-        for s in seasons:
+        elif v == 'psl':
+            print('to hPa')
+            data = data.__mul__(1 / 100)
 
-            mmonth = min_max_months[count]
+        for c in cases:
+            print(c)
+            count = 0
+            for s in seasons:
+                print(s)
 
-            def PermuDatesComposite(n, data=data, mmonth=mmonth, season_name=s):
-                mmin = mmonth[0]
-                mmax = mmonth[-1]
-                rn = np.random.RandomState(616)
+                files = glob.glob('/datos/luciano.andrian/ncfiles/nc_comps/*.nc')
+                if len(files) != 0:
+                    for f in files:
+                        try:
+                            os.remove(f)
+                        except:
+                            print('Error: ' + f)
 
-                for a in n:
-                    dates_rn = rn.permutation(neutro_concat)
-                    neutro_new = dates_rn[0:len(neutro)]
-                    data_new = dates_rn[len(neutro):]
+                mmonth = min_max_months[count]
 
-                    neutro_comp = CompositeSimple(original_data=data, index=neutro_new,
-                                                  mmin=mmin, mmax=mmax)
-                    data_comp = CompositeSimple(original_data=data, index=data_new,
-                                                mmin=mmin, mmax=mmax)
+                def PermuDatesComposite(n, data=data, mmonth=mmonth):
+                    mmin = mmonth[0]
+                    mmax = mmonth[-1]
+                    rn = np.random.RandomState(616)
 
-                    if a == n[0]:
-                        comp = data_comp - neutro_comp
-                        comp = comp.expand_dims(time=[a])
-                        comp_concat = comp
+                    for a in n:
+                        dates_rn = rn.permutation(neutro_concat)
+                        neutro_new = dates_rn[0:len(neutro)]
+                        data_new = dates_rn[len(neutro):]
+
+                        neutro_comp = CompositeSimple(original_data=data, index=neutro_new,
+                                                      mmin=mmin, mmax=mmax)
+                        data_comp = CompositeSimple(original_data=data, index=data_new,
+                                                    mmin=mmin, mmax=mmax)
+
+                        if a == n[0]:
+                            comp = data_comp - neutro_comp
+                            comp = comp.expand_dims(time=[a])
+                            comp_concat = comp
+                        else:
+                            comp = data_comp - neutro_comp
+                            comp = comp.expand_dims(time=[a])
+                            comp_concat = xr.concat([comp_concat, comp], dim='time')
+
+                    comp_concat.to_netcdf('/datos/luciano.andrian/ncfiles/nc_comps/' + 'Comps_' +
+                                          str(int(a)) + '.nc')
+                    del comp
+                    del data_comp
+                    del neutro_new
+                    del comp_concat
+
+                aux = xr.open_dataset(nc_date_dir + 'Composite_' + i + '_2020_' + s + '.nc')
+                neutro = aux.Neutral
+                data_to_concat = aux[c]
+                aux.close()
+
+                M = NumberPerts(data_to_concat, neutro, 0)
+
+                if (data_to_concat[0] != 0):
+                    neutro_concat = np.concatenate([neutro, data_to_concat])
+
+                    hour = datetime.now().hour
+                    if (hour > 20) | (hour < 7):
+                        n_thread = 25
+                        pool = ThreadPool(25)
                     else:
-                        comp = data_comp - neutro_comp
-                        comp = comp.expand_dims(time=[a])
-                        comp_concat = xr.concat([comp_concat,comp],dim='time')
+                        n_thread = 10
+                        pool = ThreadPool(10)
 
-                    print(a)
+                    print('Threads: ', n_thread)
 
-                comp_concat.to_netcdf('/datos/luciano.andrian/ncfiles/nc_comps/' + 'Comps_' +
-                               str(int(a)) + '.nc')
-                del comp_concat
+                    pool.map(PermuDatesComposite, [n for n in M])
+                    pool.close()
+
+                    aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/Comps_*.nc', parallel=True
+                                            , #chunks={'time': -1},  # 'lat':147,'lon':240},
+                                            combine='nested', concat_dim="time", coords="different",
+                                            compat="broadcast_equals")
+                    # aux = aux['var'].astype(np.float32)
+                    print('quantiles')
+                    aux = aux.chunk({'time': -1})
+                    qt = aux.quantile([.05, .95], dim='time', interpolation='linear')
+                    qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' + v + '_' + c + '_' + i +
+                                 '_2020' + '_' + s + '.nc', compute=True)
+                    aux.close()
+                    del qt
+
+                    # with dask.config.set(schedular='threads', pool=ThreadPool(10)):
+
+                else:
+                    print('no ' + c)
+
+            count += 1
 
 
-            aux = xr.open_dataset(nc_date_dir + 'Composite_' + i + '_2020_' + s + '.nc')
-            neutro = aux.Neutral
-            data_to_concat = aux[c]
-            del aux
 
-            M = NumberPerts(data_to_concat, neutro, 0)
 
-            if data_to_concat[0] != 0:
-                neutro_concat = np.concatenate([neutro, data_to_concat])
-                from multiprocessing.pool import ThreadPool
-                pool = ThreadPool(20)
-                pool.map_async(PermuDatesComposite, [n for n in M])
-                #[pool.apply_async(PermuDatesComposite, args=(n, data, mmonth)) for n in M]
-                pool.close()
-########################################################################################################################
-
-            # aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/*.nc', parallel=True
-            #                         , chunks=100,
-            #                         combine='nested', concat_dim="time", coords="different",
-            #                         compat="broadcast_equals")
-            #
-            # qt = aux.persist().quantile([.05, .95], dim='time', interpolation='linear')
-            #
-            # qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
-            #              variable + '_quantiles_'+ c + '_' + i + '-2020.nc')
 
 ########################################################################################################################
-import xarray as xr
-import dask
-import numpy as np
-from multiprocessing.pool import ThreadPool
-with dask.config.set(schedular='threads', pool=ThreadPool(20)):
-    aux = xr.open_mfdataset('/datos/luciano.andrian/ncfiles/nc_comps/Comps_*.nc', parallel=True
-                            , chunks={'time':-1, 'lat':147,'lon':240},
-                            combine='nested', concat_dim="time", coords="different",
-                            compat="broadcast_equals")
-    #aux = aux['var'].astype(np.float32)
-    print('quantiles')
-    aux = aux.chunk({'time':-1})
-    qt = aux.quantile([.05,.95],dim='time', interpolation='linear')
-    aux = np.quantile(aux['var'].persist(),[.05,.95], axis=0)
-    #qt = aux.load().quantile([.05, .95], dim='time', interpolation='linear')
-    # qt.to_netcdf('/datos/luciano.andrian/ncfiles/nc_quantiles/' +
-    #              variable + '_quantiles_' + c + '_' + i + '-2020.nc')
