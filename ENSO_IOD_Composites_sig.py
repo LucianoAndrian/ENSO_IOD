@@ -18,7 +18,7 @@ data_dir = '/datos/luciano.andrian/ncfiles/'
 out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/composite/w_sig/'
 sig_dir = '/datos/luciano.andrian/ncfiles/nc_quantiles/'
 
-start = ('1920', '1950')
+start = ('1920')#, '1950')
 seasons = ("Full_Season", 'JJA', 'ASO', 'SON')
 min_max_months = [[7,11], [6,8],[8,10],[9,11]]
 variables = ['hgt200', 'div', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
@@ -245,10 +245,10 @@ for v in variables:
 
                 print(title_case[c_cases])
                 Plot(comp=comp, comp_sig=sig, significance=True, cmap=cmap[c_var],
-                     levels=np.linspace(-450, 450, 21), number_events=case,
+                     levels=scales[c_var], number_events=case,
                      SA=SA[c_var], step=step[c_var], text=text, dpi=200,
                      title=v_name[c_var] + '\n' + title_case[c_cases] + '\n' +s + '  ' + i +  ' - 2020',
-                     name_fig = 'Comp_' + c + '_' + s + '_' + i + '_2020',
+                     name_fig = v  +'_Comp_' + c + '_' + s + '_' + i + '_2020',
                      save=True)
 
                 count += 1

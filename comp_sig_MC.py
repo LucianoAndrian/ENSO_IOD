@@ -68,11 +68,14 @@ nc_date_dir = '/datos/luciano.andrian/ncfiles/nc_composites_dates/'
 data_dir = '/datos/luciano.andrian/ncfiles/'
 
 start = ('1920', '1950')
-seasons = ("Full_Season", 'JJA', 'ASO', 'SON')
+#seasons = ("Full_Season", 'JJA', 'ASO', 'SON')
+seasons = ("Full_Season", 'SON')
 
-min_max_months = [[7,11], [6,8],[8,10],[9,11]]
+#min_max_months = [[7,11], [6,8],[8,10],[9,11]]
+min_max_months = [[7,11],[9,11]]
 
-variables = ['hgt200', 'div', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
+#variables = ['hgt200', 'div', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
+variables = ['psl', 'sf']
 
 cases = ['DMI_sim_pos', 'DMI_sim_neg', 'DMI_neg', 'DMI_pos', 'DMI_un_pos', 'DMI_un_neg',
          'N34_pos', 'N34_neg', 'N34_un_pos', 'N34_un_neg']
