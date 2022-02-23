@@ -1,5 +1,4 @@
 import time
-
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +7,7 @@ import cartopy.feature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import cartopy.crs as ccrs
 import os
+from ENSO_IOD_Funciones import OpenDatasets
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 import warnings
@@ -18,26 +18,25 @@ data_dir = '/datos/luciano.andrian/ncfiles/'
 out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/composite/w_sig/'
 sig_dir = '/datos/luciano.andrian/ncfiles/nc_quantiles/'
 
-start = ('1920')#, '1950')
+start = ('1920', '1950')
 seasons = ("Full_Season", 'JJA', 'ASO', 'SON')
 min_max_months = [[7,11], [6,8],[8,10],[9,11]]
-variables = ['hgt200', 'div', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
+variables = ['hgt200', 'psl', 'sf', 'vp', 't_cru', 't_BEIC', 'pp_gpcc']
 
 
 cases = ['DMI_sim_pos', 'DMI_sim_neg', 'DMI_neg', 'DMI_pos', 'DMI_un_pos', 'DMI_un_neg',
          'N34_pos', 'N34_neg', 'N34_un_pos', 'N34_un_neg']
 
 scales = [np.linspace(-450, 450, 21),  #hgt
-          np.linspace(-0.45e-5, 0.45e-5, 13),  # div
           np.linspace(-3, 3, 13),  #psl
           np.linspace(-4.5e6, 4.5e6, 13),  #sf
           np.linspace(-4.5e6, 4.5e6, 13),  #vp
           np.linspace(-1, 1 ,17),  #t
           np.linspace(-1, 1 ,17),  #t
-          np.linspace(30, 30, 13)] #pp
+          np.linspace(-30, 30, 13)] #pp
 
-SA = [False,False,False,False,False,True, True, True]
-step = [1,6,1,1,1,1,1,1]
+SA = [False,False,False,False,True, True, True]
+step = [1,1,1,1,1,1,1]
 text = True
 
 title_case = ['DMI-ENSO simultaneous positive phase ',
@@ -51,7 +50,7 @@ title_case = ['DMI-ENSO simultaneous positive phase ',
               'ENSO isolated positive phase ',
               'ENSO isolated negative phase ']
 
-v_name = ['HGT 200hPa', 'Divergence', 'PSL',
+v_name = ['HGT 200hPa', 'PSL',
           'Stream Function', 'Potential Velocity',
           'Temperature - Cru', 'Temperature - BEIC', 'Precipitation - GPCC']
 
@@ -178,9 +177,11 @@ for v in variables:
     for i in start:
         print('Período: ' + i + '- 2020')
         print('Open ' + v + '.nc')
-
-
-        data = xr.open_dataset(data_dir + v + '.nc')
+        if (v == 't_cru') | (v == 't_BEIC') | (v == 'pp_gpcc'):
+            print('Using OpenDatasets')
+            data = OpenDatasets(name=v, interp=True) # Mc se hizo en 1x1
+        else:
+            data = xr.open_dataset(data_dir + v + '.nc')
 
         if v == 'hgt200':
             print('drop level')
@@ -235,7 +236,7 @@ for v in variables:
                 comp = data_comp - neutro_comp
 
 
-                sig = comp.where((comp<data_sig['var'][0]) | (comp>data_sig['var'][1]))
+                sig = comp.where((comp<data_sig['var'][0]) | (comp>data_sig['var'][1])) # VER. no funciona con los NANs en SA en T y PP
                 try:
                     sig = sig.where(~np.isnan(sig['var']), 0)
                 except:
