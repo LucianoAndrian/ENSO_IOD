@@ -70,7 +70,7 @@ cbar.set_over('#9B1C00')
 cbar.set_under('#014A9B')
 cbar.set_bad(color='white')
 
-cmap = [cbar, cbar, cbar, cbar_r, cbar, cbar, cbar, 'BrBG']
+cmap = [cbar, cbar, cbar, cbar_r, cbar, cbar, 'BrBG']
 
 
 ## Functions ###########################################################################################################
@@ -113,7 +113,7 @@ def Plot(comp, comp_sig, significance=False,
     ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
     crs_latlon = ccrs.PlateCarree()
     if SA:
-        ax.set_extent([270,330, -60,20],crs_latlon)
+        ax.set_extent([270,330, -60,20],crs=crs_latlon)
     else:
         ax.set_extent([0, 359, -80, 40], crs=crs_latlon)
 
@@ -128,8 +128,8 @@ def Plot(comp, comp_sig, significance=False,
 
     if significance:
         comp_sig_var = comp_sig['var']
-        values = ax.contour(comp_sig.lon, comp_sig.lat, comp_sig_var, levels=[-1,1],
-                            transform=crs_latlon, colors='k', linewidths=1)
+        values = ax.contourf(comp_sig.lon, comp_sig.lat, comp_sig_var, levels=levels,
+                            transform=crs_latlon, colors='k', hatches=["", "..."], alpha=0)
 
     if two_variables:
         print('comp2 as contour')
@@ -140,7 +140,7 @@ def Plot(comp, comp_sig, significance=False,
 
         if significance2:
             comp2_sig_var = comp2_sig['var']
-            values = ax.contour(comp2_sig.lon, comp2_sig.lat, comp2_sig_var, levels=[-1, 1],
+            values = ax.scatter(comp2_sig.lon, comp2_sig.lat, comp2_sig_var, levels=[-1, 1],
                                 transform=crs_latlon, colors='magenta', linewidths=1)
 
     cb = plt.colorbar(im, fraction=0.042, pad=0.035,shrink=0.8)
@@ -236,9 +236,10 @@ for v in variables:
                 comp = data_comp - neutro_comp
 
 
-                sig = comp.where((comp<data_sig['var'][0]) | (comp>data_sig['var'][1])) # VER. no funciona con los NANs en SA en T y PP
+                sig = comp.where((comp<data_sig['var'][0]) | (comp>data_sig['var'][1]))
                 try:
-                    sig = sig.where(~np.isnan(sig['var']), 0)
+                    sig = sig.where(np.isnan(sig['var']), 0)
+                    #sig = sig.where(~sig['var']!=0,1)
                 except:
                     print('Sin valores significativos')
 
@@ -255,10 +256,3 @@ for v in variables:
                 count += 1
             c_cases += 1
     c_var += 1
-
-
-
-
-
-
-
