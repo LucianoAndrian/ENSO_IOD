@@ -829,14 +829,14 @@ def PlotComp(comp, comp_var, title='Fig', fase=None, name_fig='Fig',
     if SA:
         fig = plt.figure(figsize=(5, 6), dpi=dpi)
     else:
-        fig = plt.figure(figsize=(7, 3.5), dpi=dpi)
+        fig = plt.figure(figsize=(7, 3), dpi=dpi)
 
     ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
     crs_latlon = ccrs.PlateCarree()
     if SA:
         ax.set_extent([270,330, -60,20],crs_latlon)
     else:
-        ax.set_extent([0, 359, -80, 40], crs=crs_latlon)
+        ax.set_extent([0, 359, -90, 10], crs=crs_latlon)
 
 
     im = ax.contourf(comp.lon[::step], comp.lat[::step], comp_var[::step,::step],
@@ -855,7 +855,7 @@ def PlotComp(comp, comp_var, title='Fig', fase=None, name_fig='Fig',
         print('Plot Two Variables')
         comp_var2 = comp2['var'] ######## CORREGIR en caso de generalizar #############
         values2 = ax.contour(comp2.lon, comp2.lat, comp_var2, levels=levels2,
-                            transform=crs_latlon, colors='k', linewidths=1)
+                            transform=crs_latlon, colors='k', linewidths=0.5, alpha=0.6)
         #ax.clabel(values2, inline=1, fontsize=5, fmt='%1.1f')
 
 
@@ -870,7 +870,7 @@ def PlotComp(comp, comp_var, title='Fig', fase=None, name_fig='Fig',
         ax.set_yticks(np.arange(-60, 40, 20), crs=crs_latlon)
     else:
         ax.set_xticks(np.arange(30, 330, 60), crs=crs_latlon)
-        ax.set_yticks(np.arange(-80, 20, 20), crs=crs_latlon)
+        ax.set_yticks(np.arange(-90, 10, 10), crs=crs_latlon)
     lon_formatter = LongitudeFormatter(zero_direction_label=True)
     lat_formatter = LatitudeFormatter()
     ax.xaxis.set_major_formatter(lon_formatter)
@@ -885,12 +885,13 @@ def PlotComp(comp, comp_var, title='Fig', fase=None, name_fig='Fig',
         py_mask = ma.array(py, mask=M)
         # plot vectors
         lons, lats = np.meshgrid(comp.lon.values, comp.lat.values)
-        ax.quiver(lons[::20, ::20], lats[::20, ::20], px_mask[0, ::20, ::20],
-                  py_mask[0, ::20, ::20], transform=crs_latlon,pivot='mid'
-                  , scale=1/50)#, width=1.5e-3, headwidth=3.1,  # headwidht (default3)
+        ax.quiver(lons[::17, ::17], lats[::17, ::17], px_mask[0, ::17, ::17],
+                  py_mask[0, ::17, ::17], transform=crs_latlon,pivot='tail',
+                  width=0.0014,headwidth=4.1, alpha=0.8, color='k')
+                  #, scale=1/10)#, width=1.5e-3, headwidth=3.1,  # headwidht (default3)
                   #headlength=2.2)  # (default5))
 
-    plt.title(str(title) + ' - ' + str(season) + '  ' + str(fase.split(' ', 1)[1]), fontsize=10)
+    plt.title(title, fontsize=10)
     if text:
         plt.figtext(0.5, 0.01, number_events, ha="center", fontsize=10,
                 bbox={'facecolor': 'w', 'alpha': 0.5, 'pad': 5})
@@ -902,6 +903,85 @@ def PlotComp(comp, comp_var, title='Fig', fase=None, name_fig='Fig',
     else:
         plt.show()
 
+
+
+
+def PlotWAFCountours(comp, comp_var, title='Fig', name_fig='Fig',
+             save=False, dpi=200, levels=np.linspace(-1.5, 1.5, 13),
+             contour=False, cmap='RdBu_r', number_events='',
+             waf=False, px=None, py=None, text=True, waf_scale=None, waf_units=None,
+             two_variables = False, comp2=None, step = 1,step_waf=12,
+             levels2=np.linspace(-1.5, 1.5, 13), contour0 = False):
+
+    from numpy import ma
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(6.5, 2.5), dpi=dpi)
+
+    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
+    crs_latlon = ccrs.PlateCarree()
+    ax.set_extent([0, 359, -90, 10], crs=crs_latlon)
+
+
+    im = ax.contourf(comp.lon[::step], comp.lat[::step], comp_var[::step,::step],
+                     levels=levels,transform=crs_latlon, cmap=cmap, extend='both')
+    if contour:
+        values = ax.contour(comp.lon, comp.lat, comp_var, levels=levels,
+                            transform=crs_latlon, colors='darkgray', linewidths=1)
+        ax.clabel(values, inline=1, fontsize=5, fmt='%1.1f')
+
+    if contour0:
+        values = ax.contour(comp.lon, comp.lat, comp_var, levels=0,
+                            transform=crs_latlon, colors='magenta', linewidths=1)
+        ax.clabel(values, inline=1.5, fontsize=5, fmt='%1.1f')
+
+    if two_variables:
+        print('Plot Two Variables')
+        comp_var2 = comp2['var']
+        values2 = ax.contour(comp2.lon, comp2.lat, comp_var2, levels=levels2,
+                            transform=crs_latlon, colors='k', linewidths=0.5, alpha=0.6)
+        #ax.clabel(values2, inline=1, fontsize=5, fmt='%1.1f')
+
+    cb = plt.colorbar(im, fraction=0.042, pad=0.035,shrink=0.8)
+    cb.ax.tick_params(labelsize=8)
+    ax.add_feature(cartopy.feature.LAND, facecolor='#d9d9d9')
+    ax.add_feature(cartopy.feature.COASTLINE)
+    ax.gridlines(crs=crs_latlon, linewidth=0.3, linestyle='-')
+    ax.set_xticks(np.arange(30, 330, 60), crs=crs_latlon)
+    ax.set_yticks(np.arange(-90, 10, 10), crs=crs_latlon)
+    lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    lat_formatter = LatitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    ax.tick_params(labelsize=7)
+
+    if waf:
+        Q60 = np.percentile(np.sqrt(np.add(np.power(px, 2), np.power(py, 2))), 0)
+        M = np.sqrt(np.add(np.power(px, 2), np.power(py, 2))) < Q60
+        # mask array
+        px_mask = ma.array(px, mask=M)
+        py_mask = ma.array(py, mask=M)
+        # plot vectors
+        lons, lats = np.meshgrid(comp.lon.values, comp.lat.values)
+        ax.quiver(lons[::step_waf, ::step_waf],
+                  lats[::step_waf, ::step_waf],
+                  px_mask[0, ::step_waf, ::step_waf],
+                  py_mask[0, ::step_waf, ::step_waf], transform=crs_latlon,pivot='tail',
+                  width=0.0014,headwidth=4.1, alpha=0.8, color='k', scale=waf_scale, scale_units=waf_units)
+                  #, scale=1/10)#, width=1.5e-3, headwidth=3.1,  # headwidht (default3)
+                  #headlength=2.2)  # (default5))
+
+    plt.title(title, fontsize=10)
+    if text:
+        plt.figtext(0.5, 0.01, 'Number of events: ' + str(number_events), ha="center", fontsize=10,
+                bbox={'facecolor': 'w', 'alpha': 0.5, 'pad': 5})
+    #plt.tight_layout()
+
+    if save:
+        plt.savefig(name_fig + '.jpg')
+        plt.close()
+    else:
+        plt.show()
 
 def Plots(data, variable='var', neutral=None, DMI_pos=None, DMI_neg=None,
           N34_pos=None, N34_neg=None, neutral_name='', cmap='RdBu_r',
@@ -1211,3 +1291,97 @@ def xrFieldTimeDetrend(xrda, dim, deg=1):
 
     dt = xrda - trend
     return dt
+
+
+def CompositeSimple(original_data, index, mmin, mmax):
+    def is_months(month, mmin, mmax):
+        return (month >= mmin) & (month <= mmax)
+
+    if len(index) != 0:
+        comp_field = original_data.sel(time=original_data.time.dt.year.isin([index]))
+        comp_field = comp_field.sel(
+            time=is_months(month=comp_field['time.month'], mmin=mmin, mmax=mmax))
+        if len(comp_field.time) != 0:
+            comp_field = comp_field.mean(['time'], skipna=True)
+        else:  # si sólo hay un año
+            print('1 year')
+            comp_field = comp_field.drop_dims(['time'])
+
+        return comp_field
+    else:
+        print(' len index = 0')
+
+def ChangeLons(data, lon_name='lon'):
+    data['_longitude_adjusted'] = xr.where(
+        data[lon_name] < 0,
+        data[lon_name] + 360,
+        data[lon_name])
+
+    data = (
+        data
+            .swap_dims({lon_name: '_longitude_adjusted'})
+            .sel(**{'_longitude_adjusted': sorted(data._longitude_adjusted)})
+            .drop(lon_name))
+
+    data = data.rename({'_longitude_adjusted': 'lon'})
+
+    return data
+
+
+def SelectNMMEFiles(model_name, variable, dir, anio=None, in_month=None, by_r=False, r=None):
+    import glob
+    """
+    Selecciona los archivos en funcion de del mes de entrada (in_month) o del miembro de ensamble (r)
+
+    :param model_name: [str] nombre del modelo
+    :param variable:[str] variable usada en el nombre del archivo
+    :param dir:[str] directorio de los archivos a abrir
+    :param anio:[str] anio de inicio del pronostico
+    :param in_month:[str] mes de inicio del pronostico
+    :param by_r: [bool] True para seleccionar todos los archivos de un mismo miembro de ensamble
+    :param r: [str] solo si by_r = True, numero del miembro de ensamble que se quiere abrir
+    :return: lista con los nombres de los archivos seleccionados
+    """
+
+    if by_r==False:
+
+        if ((isinstance(model_name, str) == False) | (isinstance(variable, str) == False) |
+                (isinstance(dir, str) == False) | (isinstance(in_month, str) == False)
+                | (isinstance(anio, str) == False)):
+            print('ERROR: model_name, variable, dir and in_month must be a string')
+            return
+
+        if int(in_month) < 10:
+            m_in = '0'
+        else:
+            m_in = ''
+
+        if in_month == '1':
+            y1 = 0
+            m1 = -11
+            m_en = ''
+        elif int(in_month) > 10:
+            y1 = 1
+            m1 = 1
+            m_en = ''
+            print('Year in chagend')
+            anio = str(int(anio) - 1)
+        else:
+            y1 = 1
+            m1 = 1
+            m_en = '0'
+
+    if by_r:
+        if (isinstance(r, str) == False):
+            print('ERROR: r must be a string')
+            return
+
+        files = glob.glob(dir + variable + '_Amon_' + model_name + '_*'
+                          '_r'+ r +'_*' + '-*.nc')
+
+    else:
+        files = glob.glob(dir + variable + '_Amon_' + model_name + '_' + anio + m_in + in_month +
+                          '_r*_' + anio + m_in + in_month + '-' + str(int(anio) + y1) + m_en +
+                          str(int(in_month) - m1) + '.nc')
+
+    return files
