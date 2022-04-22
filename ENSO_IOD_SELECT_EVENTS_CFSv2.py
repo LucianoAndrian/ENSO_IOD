@@ -4,98 +4,276 @@ Selecciona para cada miembro de ensambe y lead los campos en los que se dan los 
 """
 ########################################################################################################################
 import xarray as xr
+import numpy as np
 ########################################################################################################################
-dates_dir = '/datos/luciano.andrian/ncfiles/NMME_CFSv2/index_r/z'
+dates_dir = '/datos/luciano.andrian/ncfiles/NMME_CFSv2/DMI_N34_Leads_r/'
 dir_leads = '/datos/luciano.andrian/ncfiles/NMME_CFSv2/'
 out_dir = '/pikachu/datos/luciano.andrian/cases/'
+
 ########################################################################################################################
-mmonth_seasons = [0,1,2,3] #son las de abajo...
-seasons = ['JJA', 'JAS', 'ASO', 'SON']
-variables = ['prec', 'tref']
-cases = ['DMI_sim_pos', 'DMI_sim_neg', 'DMI_neg', 'DMI_pos', 'DMI_un_pos', 'DMI_un_neg',
-         'N34_pos', 'N34_neg', 'N34_un_pos', 'N34_un_neg', 'Neutral']
+def xrClassifierEvents(index, r=None, by_r=True):
+    if by_r:
+        index_r = index.sel(r=r)
+        aux_index_r = index_r.time[np.where(~np.isnan(index_r.index))]
+        index_r_f = index_r.sel(time=index_r.time.isin(aux_index_r))
 
-# Fechas para cada case en cases (lo de arriba)
-#[r,ms,l,y]
-dates = xr.open_dataset(dates_dir + 'dates_dmi_n34_cfsv2.nc')
+        index_pos = index_r_f.index.time[index_r_f.index > 0]
+        index_neg = index_r_f.index.time[index_r_f.index < 0]
 
-#conjuntos de leads
-conjuntos = ([0],[0,1],[0,1,2,3],[4,5,6,7],[0,1,2,3,4,5,6,7])
-conj_name= ('0','1','3','7', 'todo')
-
-for v in variables:
-    print(v)
-
-    # pp en mm/day
-    if v == 'prec':
-        factor=30
+        return index_pos, index_neg, index_r_f
     else:
-        factor=1
-    for c in cases: #loop en los eventos
-        case = dates[c]
+        #print('by_r = False')
+        index_pos = index.index.time[index.index > 0]
+        index_neg = index.index.time[index.index < 0]
+        return index_pos, index_neg
 
-        for ms in mmonth_seasons: #loop en las seasons
-            season_name = seasons[ms]
-            print(season_name)
-            cj_count=0
-            for cj in conjuntos:# loop en los conjuntos de leads
-                print(cj)
-                count = 0
-                for l in cj: #loop en los leads de cada conjunto
-                    print(l)
-                    #abre salida de LoadLeads.py
-                    data_r = xr.open_dataset(dir_leads + v + '_CFSv2_' + season_name + '_Lead_' + str(l) + '.nc').__mul__(factor)
+def ConcatEvent(xr_original, xr_to_concat, dim='time'):
+    if (len(xr_to_concat.time) != 0) and (len(xr_original.time) != 0):
+        xr_concat = xr.concat([xr_original, xr_to_concat], dim=dim)
+    elif (len(xr_to_concat.time) == 0) and (len(xr_original.time) != 0):
+        xr_concat = xr_original
+    elif (len(xr_to_concat.time) != 0) and (len(xr_original.time) == 0):
+        xr_concat = xr_to_concat
+    elif (len(xr_to_concat.time) == 0) and (len(xr_original.time) == 0):
+        return []
 
-                    for r in range(0, 24): #loop en los miembros de ensamble
-                        # de cada "case" selecciona el miembro de ensamble, la season(ms) y lead
-                        case_date = case[r, ms, l, :]
-                        # los nan se usaron solo para crear el xr.Dataset y que no joda con la longitud de los años
-                        case_date = case_date.dropna('years').values
+    return xr_concat
+########################################################################################################################
+mmonth_seasons_names = [0,1,2,3] #son las de abajo...
+seasons = ['JJA', 'JAS', 'ASO', 'SON']
+mmonth_seasons = [7, 8, 9, 10]
+sets = [[0],[0,1],[0,1,2,3],[0,1,2,3,4,5,6,7]]
 
-                        # selecciona en data_r los miembros de ensamble y anios en case, case_date
+variables = ['prec', 'tref']
+
+for m_name in mmonth_seasons_names:
+    print(seasons[m_name])
+    data_dmi_s = xr.open_dataset(dates_dir + seasons[m_name] + '_DMI_Leads_r_CFSv2.nc')
+    data_n34_s = xr.open_dataset(dates_dir + seasons[m_name] + '_N34_Leads_r_CFSv2.nc')
+    data_tref_s = xr.open_dataset(dir_leads + seasons[m_name] + '_tref_Leads_r_CFSv2.nc')
+    data_prec_s = xr.open_dataset(dir_leads + seasons[m_name] + '_prec_Leads_r_CFSv2.nc')
+
+    for s in sets:
+        print('Set: ' + str(s))
+        l = np.arange(len(s))
+        ms = mmonth_seasons[m_name]
+        data_dmi = data_dmi_s.sel(time=data_dmi_s.time.dt.month.isin(ms-l))
+        data_n34 = data_n34_s.sel(time=data_n34_s.time.dt.month.isin(ms-l))
+
+        data_prec = data_prec_s.sel(time=data_prec_s.time.dt.month.isin(ms - l))
+        data_tref = data_tref_s.sel(time=data_tref_s.time.dt.month.isin(ms - l))
+
+        data_dmi = data_dmi_s.where(np.abs(data_dmi) > 0.75*data_dmi.std(['time','r']))
+        data_n34 = data_n34_s.where(np.abs(data_n34) > data_n34.std(['time','r']))
+
+        r_count = 0
+        sim_DMIpos_N34neg=-1
+        sim_DMIneg_N34pos=-1
+        for r in range(1, 25):
+            DMI_sim_pos_N34_neg = []
+            DMI_sim_neg_N34_pos = []
+            DMI_pos, DMI_neg, DMI = xrClassifierEvents(data_dmi.drop('L'), r)
+            N34_pos, N34_neg, N34 = xrClassifierEvents(data_n34.drop('L'), r)
+
+            # Simultaneous events
+            sim_events = np.intersect1d(N34.time, DMI.time)
+            DMI_sim = DMI.sel(time=DMI.time.isin(sim_events))
+            N34_sim = N34.sel(time=N34.time.isin(sim_events))
+
+            DMI_sim_pos, DMI_sim_neg = xrClassifierEvents(DMI_sim, by_r=False)
+            N34_sim_pos, N34_sim_neg = xrClassifierEvents(N34_sim, by_r=False)
+
+            if len(DMI_sim_neg_N34_pos) != 0:
+                sim_DMIneg_N34pos += 1
+                DMI_sim_neg = DMI_sim_neg[np.in1d(DMI_sim_neg, DMI_sim_neg_N34_pos, invert=True)]
+            if len(DMI_sim_pos_N34_neg) != 0:
+                sim_DMIpos_N34neg += 1
+                DMI_sim_pos = DMI_sim_pos[np.in1d(DMI_sim_pos, DMI_sim_pos_N34_neg, invert=True)]
+
+            # Unique events
+            DMI_un = DMI.sel(time=~DMI.time.isin(sim_events))
+            N34_un = N34.sel(time=~N34.time.isin(sim_events))
+
+            DMI_un_pos, DMI_un_neg = xrClassifierEvents(DMI_un, by_r=False)
+            N34_un_pos, N34_un_neg = xrClassifierEvents(N34_un, by_r=False)
+
+            aux_tref = data_tref.sel(r=r)
+
+            data_dmi_pos_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_pos))
+            data_dmi_neg_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_neg))
+
+            data_dmi_un_pos_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_un_pos))
+            data_dmi_un_neg_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_un_neg))
+
+            data_n34_pos_tref = aux_tref.sel(time=aux_tref.time.isin(N34_pos))
+            data_n34_neg_tref = aux_tref.sel(time=aux_tref.time.isin(N34_neg))
+
+            data_n34_un_pos_tref = aux_tref.sel(time=aux_tref.time.isin(N34_un_pos))
+            data_n34_un_neg_tref = aux_tref.sel(time=aux_tref.time.isin(N34_un_neg))
+
+            data_sim_pos_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_sim_pos))
+            data_sim_neg_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_sim_neg))
+
+            aux_prec = data_prec.sel(r=r)
+
+            data_dmi_pos_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_pos))
+            data_dmi_neg_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_neg))
+
+            data_dmi_un_pos_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_un_pos))
+            data_dmi_un_neg_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_un_neg))
+
+            data_n34_pos_prec = aux_prec.sel(time=aux_prec.time.isin(N34_pos))
+            data_n34_neg_prec = aux_prec.sel(time=aux_prec.time.isin(N34_neg))
+
+            data_n34_un_pos_prec = aux_prec.sel(time=aux_prec.time.isin(N34_un_pos))
+            data_n34_un_neg_prec = aux_prec.sel(time=aux_prec.time.isin(N34_un_neg))
+
+            data_sim_pos_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_sim_pos))
+            data_sim_neg_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_sim_neg))
+
+            if len(DMI_sim_pos_N34_neg) != 0:
+                data_sim_DMIpos_N34neg_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_sim_pos_N34_neg))
+                data_sim_DMIpos_N34neg_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_sim_pos_N34_neg))
+
+            if len(DMI_sim_neg_N34_pos) != 0:
+                data_sim_DMIneg_N34pos_prec = aux_prec.sel(time=aux_prec.time.isin(DMI_sim_neg_N34_pos))
+                data_sim_DMIneg_N34pos_tref = aux_tref.sel(time=aux_tref.time.isin(DMI_sim_neg_N34_pos))
+
+            dates_ref = aux_tref.time
+            mask = np.in1d(dates_ref, DMI.time, invert=True)
+            neutro = aux_tref.sel(time=aux_tref.time.isin(dates_ref[mask]))
+            mask = np.in1d(dates_ref, N34.time, invert=True)
+            neutro_tref = neutro.sel(time=neutro.time.isin(dates_ref[mask]))
+            del neutro
+
+            dates_ref = aux_prec.time
+            mask = np.in1d(dates_ref, DMI.time, invert=True)
+            neutro = aux_prec.sel(time=aux_prec.time.isin(dates_ref[mask]))
+            mask = np.in1d(dates_ref, N34.time, invert=True)
+            neutro_prec = neutro.sel(time=neutro.time.isin(dates_ref[mask]))
+
+            if r_count == 0:
+                data_dmi_pos_f_tref = data_dmi_pos_tref
+                data_dmi_neg_f_tref = data_dmi_neg_tref
+                data_dmi_un_pos_f_tref = data_dmi_un_pos_tref
+                data_dmi_un_neg_f_tref = data_dmi_un_neg_tref
+                data_n34_pos_f_tref = data_n34_pos_tref
+                data_n34_neg_f_tref = data_n34_neg_tref
+                data_n34_un_pos_f_tref = data_n34_un_pos_tref
+                data_n34_un_neg_f_tref = data_n34_un_neg_tref
+                data_sim_pos_f_tref = data_sim_pos_tref
+                data_sim_neg_f_tref = data_sim_neg_tref
+                # que elegancia la de francia...
+                data_dmi_pos_f_prec = data_dmi_pos_prec
+                data_dmi_neg_f_prec = data_dmi_neg_prec
+                data_dmi_un_pos_f_prec = data_dmi_un_pos_prec
+                data_dmi_un_neg_f_prec = data_dmi_un_neg_prec
+                data_n34_pos_f_prec = data_n34_pos_prec
+                data_n34_neg_f_prec = data_n34_neg_prec
+                data_n34_un_pos_f_prec = data_n34_un_pos_prec
+                data_n34_un_neg_f_prec = data_n34_un_neg_prec
+                data_sim_pos_f_prec = data_sim_pos_prec
+                data_sim_neg_f_prec = data_sim_neg_prec
+                r_count = 1
+
+                neutro_tref_f = neutro_tref
+                neutro_prec_f = neutro_prec
+
+            else:
+                data_dmi_pos_f_tref = ConcatEvent(data_dmi_pos_f_tref, data_dmi_pos_tref)
+                data_dmi_neg_f_tref = ConcatEvent(data_dmi_neg_f_tref, data_dmi_neg_tref)
+                data_dmi_un_pos_f_tref = ConcatEvent(data_dmi_un_pos_f_tref, data_dmi_un_pos_tref)
+                data_dmi_un_neg_f_tref = ConcatEvent(data_dmi_un_neg_f_tref, data_dmi_un_neg_tref)
+                data_n34_pos_f_tref = ConcatEvent(data_n34_pos_f_tref, data_n34_pos_tref)
+                data_n34_neg_f_tref = ConcatEvent(data_n34_neg_f_tref, data_n34_neg_tref)
+                data_n34_un_pos_f_tref = ConcatEvent(data_n34_un_pos_f_tref, data_n34_un_pos_tref)
+                data_n34_un_neg_f_tref = ConcatEvent(data_n34_un_neg_f_tref, data_n34_un_neg_tref)
+                data_sim_pos_f_tref = ConcatEvent(data_sim_pos_f_tref, data_sim_pos_tref)
+                data_sim_neg_f_tref = ConcatEvent(data_sim_neg_f_tref, data_sim_neg_tref)
+
+                data_dmi_pos_f_prec = ConcatEvent(data_dmi_pos_f_prec, data_dmi_pos_prec)
+                data_dmi_neg_f_prec = ConcatEvent(data_dmi_neg_f_prec, data_dmi_neg_prec)
+                data_dmi_un_pos_f_prec = ConcatEvent(data_dmi_un_pos_f_prec, data_dmi_un_pos_prec)
+                data_dmi_un_neg_f_prec = ConcatEvent(data_dmi_un_neg_f_prec, data_dmi_un_neg_prec)
+                data_n34_pos_f_prec = ConcatEvent(data_n34_pos_f_prec, data_n34_pos_prec)
+                data_n34_neg_f_prec = ConcatEvent(data_n34_neg_f_prec, data_n34_neg_prec)
+                data_n34_un_pos_f_prec = ConcatEvent(data_n34_un_pos_f_prec, data_n34_un_pos_prec)
+                data_n34_un_neg_f_prec = ConcatEvent(data_n34_un_neg_f_prec, data_n34_un_neg_prec)
+                data_sim_pos_f_prec = ConcatEvent(data_sim_pos_f_prec, data_sim_pos_prec)
+                data_sim_neg_f_prec = ConcatEvent(data_sim_neg_f_prec, data_sim_neg_prec)
+
+                neutro_tref_f = ConcatEvent(neutro_tref_f, neutro_tref)
+                neutro_prec_f = ConcatEvent(neutro_prec_f, neutro_prec)
+
+            if (len(DMI_sim_pos_N34_neg) != 0) and (sim_DMIpos_N34neg == 0):
+                data_sim_DMIpos_N34neg_f_prec = data_sim_DMIpos_N34neg_prec
+                data_sim_DMIpos_N34neg_f_tref = data_sim_DMIpos_N34neg_tref
+                sim_DMIpos_N34neg_anterior = 0
+            elif (len(DMI_sim_pos_N34_neg) != 0):
+                data_sim_DMIpos_N34neg_f_prec = ConcatEvent(data_sim_DMIpos_N34neg_f_prec, data_sim_DMIpos_N34neg_prec)
+                data_sim_DMIpos_N34neg_f_tref = ConcatEvent(data_sim_DMIpos_N34neg_f_tref, data_sim_DMIpos_N34neg_tref)
+
+            if (len(DMI_sim_neg_N34_pos) != 0) and (sim_DMIneg_N34pos == 0):
+                data_sim_DMIneg_N34pos_f_prec = data_sim_DMIneg_N34pos_prec
+                data_sim_DMIneg_N34pos_f_tref = data_sim_DMIneg_N34pos_tref
+                sim_DMIneg_N34pos_anterior = 0
+            elif (len(DMI_sim_neg_N34_pos) != 0):
+                data_sim_DMIneg_N34pos_f_prec = ConcatEvent(data_sim_DMIneg_N34pos_f_prec, data_sim_DMIneg_N34pos_prec)
+                data_sim_DMIneg_N34pos_f_tref = ConcatEvent(data_sim_DMIneg_N34pos_f_tref, data_sim_DMIneg_N34pos_tref)
+
+                # if (len(DMI_sim_pos_N34_neg) != 0) and (np.abs(sim_DMIpos_N34neg-sim_DMIpos_N34neg_anterior)==1):
+                #     data_sim_DMIpos_N34neg_f_prec = xr.concat([data_sim_DMIpos_N34neg_f_prec,
+                #                                                data_sim_DMIpos_N34neg_prec], dim='time')
+                #
+                #     data_sim_DMIpos_N34neg_f_tref = xr.concat([data_sim_DMIpos_N34neg_f_tref,
+                #                                                data_sim_DMIpos_N34neg_tref], dim='time')
+                #     sim_DMIpos_N34neg_anterior += 1
+                #
+                # if (len(DMI_sim_neg_N34_pos) != 0) and (np.abs(sim_DMIneg_N34pos-sim_DMIneg_N34pos_anterior)==1):
+                #     data_sim_DMIneg_N34pos_f_prec = xr.concat([data_sim_DMIneg_N34pos_f_prec,
+                #                                                data_sim_DMIneg_N34pos_prec], dim='time')
+                #
+                #     data_sim_DMIneg_N34pos_f_tref = xr.concat([data_sim_DMIneg_N34pos_f_tref,
+                #                                                data_sim_DMIneg_N34pos_tref], dim='time')
+                #     sim_DMIneg_N34pos_anterior += 1
 
 
-                        if (ms == 0 or ms == 1) and l>5 and len(case_date) != 0 and case_date[0]==1982:
-                            data_r_case = data_r.sel(r=r + 1, Year=case_date[1::])
-                        else:
-                            data_r_case = data_r.sel(r=r + 1, Year=case_date)
+        print('saving...')
+        data_dmi_pos_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_pos.nc')
+        data_dmi_neg_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_neg.nc')
+        data_dmi_un_pos_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_un_pos.nc')
+        data_dmi_un_neg_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_un_neg.nc')
+        data_n34_pos_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_pos.nc')
+        data_n34_neg_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_neg.nc')
+        data_n34_un_pos_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_un_pos.nc')
+        data_n34_un_neg_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_un_neg.nc')
+        data_sim_pos_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_pos.nc')
+        data_sim_neg_f_tref.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_neg.nc')
 
-                        #
-                        # if c == 'Neutral':
-                        #     if ms == 0 and l > 5:
-                        #         print('Neutral Events')
-                        #         if len(case_date) !=0 and case_date[0]==1982:
-                        #             # Rec. Los neutro se calculan mirando en que años
-                        #             # (dentro de periodo) no hay DMI o N34. Para los
-                        #             # pronos de JJA con lead 7, nunca hay eventos 1982.
-                        #             # En esos casos tanto el indice como los leads agrupados
-                        #             # pasan a mirar diciembre/noviembre de 1982 para los pronos de 1983
-                        #             # y son guardados con ese año 1983
-                        #             #
-                        #             # corto, no existen lead =7 para JJA en 1982
-                        #             data_r_case = data_r.sel(r=r + 1, Year=case_date[1::])
-                        # else:
-                        #     data_r_case = data_r.sel(r=r + 1, Year=case_date)
+        data_dmi_pos_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_pos.nc')
+        data_dmi_neg_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_neg.nc')
+        data_dmi_un_pos_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_un_pos.nc')
+        data_dmi_un_neg_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_DMI_un_neg.nc')
+        data_n34_pos_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_pos.nc')
+        data_n34_neg_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_neg.nc')
+        data_n34_un_pos_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_un_pos.nc')
+        data_n34_un_neg_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_N34_un_neg.nc')
+        data_sim_pos_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_pos.nc')
+        data_sim_neg_f_prec.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_neg.nc')
 
-                        #guardado
-                        if len(data_r_case.Year) != 0:
+        if len(DMI_sim_pos_N34_neg) != 0:
+            data_sim_DMIpos_N34neg_f_prec.to_netcdf(
+                out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_DMIpos_N34neg.nc')
 
-                            if count == 0:
-                                data_f = xr.Dataset(
-                                    data_vars=dict(
-                                        var=(['case', 'lat', 'lon'], data_r_case[v].values)))
-                                count += 1
-                            else:
-                                data = xr.Dataset(
-                                    data_vars=dict(
-                                        var=(['case', 'lat', 'lon'], data_r_case[v].values)))
-                                data_f = xr.concat([data_f, data], dim='case')
+            data_sim_DMIpos_N34neg_f_tref.to_netcdf(
+                out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_DMIpos_N34neg.nc')
 
-                            data_f.to_netcdf(
-                                out_dir + v + '_' + season_name + '_' + c + '_' + conj_name[cj_count] + '.nc')
-                            del data_f
+        if len(DMI_sim_neg_N34_pos) != 0:
+            data_sim_DMIneg_N34pos_f_prec.to_netcdf(
+                out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_DMIneg_N34pos.nc')
 
-                        else:
-                            print('NO DATA: ' + v + ' in ' + c + ' at: ' + '\n' + 'cj: ' + str(cj) +
-                                  ' Lead: ' + str(l) + ' r: ' + str(r)  +  ' ' + season_name)
-                cj_count += 1
+            data_sim_DMIneg_N34pos_f_tref.to_netcdf(
+                out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_sim_DMIneg_N34pos.nc')
+
+        neutro_tref_f.to_netcdf(out_dir + 'tref_' + seasons[m_name] + '_Set' + str(s[-1]) + '_NEUTRO.nc')
+        neutro_prec_f.to_netcdf(out_dir + 'prec_' + seasons[m_name] + '_Set' + str(s[-1]) + '_NEUTRO.nc')

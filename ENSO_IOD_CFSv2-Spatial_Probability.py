@@ -9,16 +9,16 @@ os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 import warnings
 #warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
 warnings.filterwarnings('ignore')
-
 ########################################################################################################################
 cases_dir = '/pikachu/datos/luciano.andrian/cases/'
-out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/Modelos/SNR_CFSv2/'
+out_dir = '/home/luciano.andrian/doc/salidas/ENSO_IOD/Modelos/SpatialProb/'
 save=True
 dpi=200
 # Funciones ############################################################################################################
 def Plot(comp, levels = np.linspace(-1,1,11), cmap='RdBu',
          dpi=100, save=True, step=1,
          name_fig='fig', title='title'):
+
 
     import matplotlib.pyplot as plt
 
@@ -29,7 +29,7 @@ def Plot(comp, levels = np.linspace(-1,1,11), cmap='RdBu',
     ax.set_extent([270,330, -60,20], crs_latlon)
 
     im = ax.contourf(comp.lon[::step], comp.lat[::step], comp_var[::step, ::step],
-                     levels=levels, transform=crs_latlon, cmap=cmap, extend='both')
+                     levels=levels, transform=crs_latlon, cmap=cmap)
     cb = plt.colorbar(im, fraction=0.042, pad=0.035,shrink=0.8)
     cb.ax.tick_params(labelsize=8)
     #ax.add_feature(cartopy.feature.LAND, facecolor='#d9d9d9')
@@ -54,7 +54,6 @@ def Plot(comp, levels = np.linspace(-1,1,11), cmap='RdBu',
         plt.show()
 
 def OpenDataSet(name, interp=False, lat_interp=None, lon_interp=None):
-    from ENSO_IOD_Funciones import ChangeLons
 
     if name == 'pp_gpcc':
         # GPCC2018
@@ -66,6 +65,15 @@ def OpenDataSet(name, interp=False, lat_interp=None, lon_interp=None):
         pp_gpcc = pp_gpcc.sel(time=slice('1982-01-01','2020-12-01'))
 
         return pp_gpcc
+
+def SpatialProbability(data, mask):
+    prob = xr.where(np.isnan(mask), mask, 1)
+    for ln in range(0, 56):
+        for lt in range(0, 76):
+            prob['var'][lt, ln] = \
+                len(data['var'][:, lt, ln][~np.isnan(data['var'][:, lt, ln].values)].values) \
+                / len(data['var'][:, lt, ln])
+    return prob*mask
 ########################################################################################################################
 variables = ('prec', 'tref')
 seasons = ('JJA', 'JAS', 'ASO', 'SON')
@@ -87,33 +95,6 @@ title_case = ['DMI-ENSO simultaneous positive phase ',
               'DMI negative and ENSO positive',
               'DMI positive and ENSO negative']
 
-scale = [np.linspace(-30,30,13), np.linspace(-1,1,13)]
-scale_sd = [np.linspace(0,10,9), np.linspace(0,1,11)]
-
-cbar_pp = colors.ListedColormap(['#003C30', '#004C42', '#0C7169', '#79C8BC', '#B4E2DB',
-                                'white',
-                                '#F1DFB3', '#DCBC75', '#995D13', '#6A3D07', '#543005', ][::-1])
-cbar_pp.set_under('#3F2404')
-cbar_pp.set_over('#00221A')
-cbar_pp.set_bad(color='white')
-
-cbar_t = colors.ListedColormap(['#B9391B', '#CD4838', '#E25E55', '#F28C89', '#FFCECC',
-                              'white',
-                              '#B3DBFF', '#83B9EB', '#5E9AD7', '#3C7DC3', '#2064AF'][::-1])
-cbar_t.set_over('#9B1C00')
-cbar_t.set_under('#014A9B')
-cbar_t.set_bad(color='white')
-
-colormap= [cbar_pp, cbar_t]
-colormap_sd = ['PuBuGn', 'YlOrRd']
-
-cbar_snr = colors.ListedColormap(['#070B4F','#2E07AC', '#387AE4' ,'#52C39D','#6FFE9B',
-                                  '#FFFFFF',
-                                  '#FEB77E', '#FB8761','#CA3E72','#782281','#251255'])
-cbar_snr.set_over('#251255')
-cbar_snr.set_under('#070B4F')
-cbar_snr.set_bad(color='white')
-
 mask = OpenDataSet('pp_gpcc', interp=True,
                    lat_interp=np.linspace(-60,15,76),
                    lon_interp=np.linspace(275,330,56))
@@ -122,17 +103,12 @@ mask = xr.where(np.isnan(mask), mask, 1)
 
 scales = [np.linspace(-30, 30, 13), np.linspace(-1.2,1.2,13)]
 scales_sd = [np.linspace(0,50,11), np.linspace(0,1,11)]
-scales_snr = [np.linspace(-1,1,11),np.linspace(-1,1,11)]
-scales_snr[0] = [-1,-.8,-.6,-.4,-.2,-.1,0,0.1,0.2,0.4,0.6,0.8,1]
-
-colormap = [cbar_pp,cbar_t]
-colormap_sd = ['PuBuGn', 'YlOrRd']
-
-v = 'prec'
-fix_factor=30
-s='SON'
-c='N34_un_neg'
-s_n= '0'
+scales_snr = [np.linspace(0.1,1,10),np.linspace(0.1,1,10)]
+#
+# v = 'prec'
+# s='JJA'
+# c='DMI_un_neg'
+# s_n= '0'
 v_count = 0
 for v in variables:
     if v == 'prec':
@@ -140,55 +116,61 @@ for v in variables:
     else:
         fix_factor=1
     for s in seasons:
-        print(s)
+        #print(s)
         for s_n in set_name:
-            print(s_n)
+            #print(s_n)
             c_count = 0
             for c in cases:
-                print(c)
+                #print(c)
                 data_neutral = xr.open_dataset(cases_dir + v + '_' + s +'_Set' + s_n + '_NEUTRO.nc').drop(['L', 'r'])
                 data_neutral = data_neutral.rename({v:'var'})
                 data_neutral *= fix_factor
                 try:
                     data_case = xr.open_dataset(cases_dir + v + '_' + s +'_Set' + s_n + '_' + c + '.nc').drop(['L', 'r'])
-                    data_case = data_case.rename({v: 'var'})
                     data_case *= fix_factor
-
-                    num_case = len(data_case.time)
-
-                    # signal
-                    aux = data_case.mean('time') - data_neutral.mean('time')
+                    data_case = data_case.rename({v: 'var'})
+                    data_case -= data_neutral.mean('time')
+                    aux = data_case.std('time')  # - data_neutral.mean('time')
                     aux *= mask
-                    Plot(aux, levels=scales[v_count], cmap=colormap[v_count],
-                         dpi=dpi, step=1,
-                         name_fig=v + '_set_' + s_n + '_' + c + '_' + s + '.nc',
-                         title='Mean Composite - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' + v + ' - ' +
-                               'Leads: ' + str(s_n) + ' - ' + 'Casos: ' + str(num_case),
-                         save=save)
 
-                    # spread
-                    aux2 = data_case - aux
-                    aux2 = aux2.std('time')
-                    aux2 *= mask
-                    Plot(aux2, levels=scales_sd[v_count], cmap=colormap_sd[v_count],
+                    # <-1*std
+                    aux2 = xr.where(data_case<-1*aux, data_case, np.nan)
+                    prob = SpatialProbability(aux2, mask)
+                    Plot(prob, levels=np.linspace(0,1,11), cmap='Spectral_r',
                          dpi=dpi, step=1,
-                         name_fig=v + 'SD_set_' + s_n + '_' + c + '_' + s + '.nc',
-                         title='SD Composite - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' + v + ' - ' +
-                               'Leads: ' + str(s_n) + ' - ' + 'Casos: ' + str(num_case),
-                         save=save)
+                         name_fig=v + '_set_' + s_n + '_-1SD_' + c + '_' + s + '.nc',
+                         title='Spatial Probability - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' +
+                               v + '<-1*std' + ' - ' + 'Leads: ' + s_n, save=save)
 
-                    # SNR
-                    snr = aux/aux2
-                    snr *= mask
-                    Plot(snr, levels=scales_snr[v_count], cmap=cbar_snr,
+                    # <0
+                    aux2 = xr.where(data_case<0, data_case, np.nan)
+                    prob = SpatialProbability(aux2, mask)
+                    Plot(prob, levels=np.linspace(0,1,11), cmap='Spectral_r',
                          dpi=dpi, step=1,
-                         name_fig=v + 'SNR_set_' + s_n + '_' + c + '_' + s + '.nc',
-                         title='SNR Composite - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' + v + ' - ' +
-                               'Leads: ' + str(s_n) + ' - ' + 'Casos: ' + str(num_case),
-                         save=save)
+                         name_fig=v + '_set_' + s_n + '_-0SD_' + c + '_' + s + '.nc',
+                         title='Spatial Probability - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' +
+                               v + '<0' + ' - ' + 'Leads: ' + s_n, save=save)
+
+                    # >1*std
+                    aux2 = xr.where(data_case>1*aux, data_case, np.nan)
+                    prob = SpatialProbability(aux2, mask)
+                    Plot(prob, levels=np.linspace(0,1,11), cmap='Spectral_r',
+                         dpi=dpi, step=1,
+                         name_fig=v + '_set_' + s_n + '_+1SD_' + c + '_' + s + '.nc',
+                         title='Spatial Probability - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' +
+                               v + '>1*std' + ' - ' + 'Leads: ' + s_n, save=save)
+
+                    # >2*std
+                    aux2 = xr.where(data_case>2*aux, data_case, np.nan)
+                    prob = SpatialProbability(aux2, mask)
+                    Plot(prob, levels=np.linspace(0,1,11), cmap='Spectral_r',
+                         dpi=dpi, step=1,
+                         name_fig=v + '_set_' + s_n + '_+2SD_' + c + '_' + s + '.nc',
+                         title='Spatial Probability - CFSv2 - ' + s + '\n' + title_case[c_count] + '\n' + ' ' +
+                               v + '>2*std' + ' - ' + 'Leads: ' + s_n, save=save)
                 except:
-                    print('No' + c + ' in Set' + s_n + ' at ' + s )
+                    x = None
+                    #print('No' + c + ' in Set' + s_n + ' at ' + s )
 
                 c_count += 1
     v_count += 1
-
